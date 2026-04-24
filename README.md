@@ -1,6 +1,6 @@
 # SqlMigrationController
 
-Проект для пакетного применения скриптов SQL
+Проект для пакетного применения скриптов SQL с веб-интерфейсом на Blazor
 
 ## Идея
 
@@ -15,30 +15,33 @@
 
 Механизм абстрактный.
 
-Первый поддерживаемый продукт SQL Server
+Первый поддерживаемый продукт: **SQL Server**
+
+Реализация на **.NET 8** с **Blazor Server** UI для удобного управления миграциями через веб-браузер.
 
 ## Требования
 
-- Python 3.8+
-- pyodbc (`pip install pyodbc`)
-- pytest (для запуска тестов)
+- .NET 8 SDK
+- SQL Server
+- Браузер для доступа к веб-интерфейсу
 
 ## Структура проекта
 
 ```
 /workspace
-├── src/
-│   ├── __init__.py          # Пакет src
-│   ├── config.py            # Конфигурация
-│   ├── migrations.py        # Модели миграций
-│   ├── database.py          # Работа с БД
-│   └── controller.py        # Основной контроллер
-├── tests/
-│   └── test_migrations.py   # Тесты
-├── cli.py                   # CLI интерфейс
-├── migrations/              # Директория для скриптов миграции
-├── logs/                    # Логи
-├── rollback/                # Скрипты отката
+├── dotnet/
+│   └── SqlMigrationBlazor/
+│       ├── Components/         # Blazor компоненты
+│       │   ├── Pages/          # Страницы приложения
+│       │   └── Layout/         # Макеты страниц
+│       ├── Data/               # Работа с БД
+│       ├── Models/             # Модели данных
+│       ├── Services/           # Сервисы миграции
+│       ├── migrations/         # Директория для скриптов миграции
+│       ├── wwwroot/            # Статические файлы
+│       ├── Program.cs          # Точка входа
+│       └── SqlMigrationBlazor.csproj
+├── migrations/                 # Примеры скриптов миграции
 └── README.md
 ```
 
@@ -60,78 +63,39 @@ V{version}__{name}_down.sql
 
 ## Использование
 
-### Через CLI
+### Запуск приложения
 
 ```bash
-# Проверка валидности скриптов
-python cli.py validate
-
-# Показать статус миграций
-python cli.py status --database MyDB --host localhost --user sa --password secret
-
-# Применить миграции
-python cli.py migrate --database MyDB --user sa --password secret
-
-# Dry-run (показать что будет выполнено)
-python cli.py migrate --database MyDB --user sa --dry-run
-
-# Откат последней миграции
-python cli.py rollback --database MyDB --user sa --password secret
-
-# Откат конкретной версии
-python cli.py rollback --database MyDB --user sa --password secret --version 001
+cd dotnet/SqlMigrationBlazor
+dotnet restore
+dotnet run
 ```
 
-### Через Python API
+Приложение будет доступно по адресу: `https://localhost:5001` или `http://localhost:5000`
 
-```python
-from src.config import Config, DatabaseConfig, MigrationConfig
-from src.controller import SqlMigrationController
+### Веб-интерфейс
 
-# Настройка конфигурации
-db_config = DatabaseConfig(
-    host="localhost",
-    port=1433,
-    database="MyDatabase",
-    username="sa",
-    password="secret"
-)
+1. **Подключение к базе данных**: Введите параметры подключения (сервер, база данных, пользователь, пароль)
+2. **Валидация**: Нажмите кнопку "Validate" для проверки скриптов миграции
+3. **Статус**: Нажмите "Status" для просмотра состояния миграций
+4. **Preview**: Нажмите "Preview" для просмотра плана выполнения без реального применения
+5. **Migrate**: Нажмите "Migrate" для применения всех ожидающих миграций
+6. **Rollback**: Используйте кнопку "Rollback" для отката последней или конкретной миграции
 
-config = Config(database=db_config)
+### Конфигурация
 
-# Применение миграций
-with SqlMigrationController(config) as controller:
-    # Валидация
-    errors = controller.validate()
-    if errors:
-        print(f"Validation errors: {errors}")
-        exit(1)
-    
-    # Проверка модификаций
-    modifications = controller.check_for_modifications()
-    if modifications:
-        print(f"Warnings: {modifications}")
-    
-    # Применение
-    batch = controller.apply_migrations()
-    print(f"Status: {batch.status}")
-    
-    # Статус
-    status = controller.status()
-    print(f"Applied: {status['applied_count']}, Pending: {status['pending_count']}")
-```
+Параметры подключения можно указать непосредственно в веб-интерфейсе или настроить в файле `appsettings.json`:
 
-### Переменные окружения
-
-```bash
-export DB_HOST=localhost
-export DB_PORT=1433
-export DB_NAME=MyDatabase
-export DB_USER=sa
-export DB_PASSWORD=secret
-export MIGRATIONS_DIR=./migrations
-export DRY_RUN=false
-export STOP_ON_ERROR=true
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Database=MyDatabase;User Id=sa;Password=secret;TrustServerCertificate=true;"
+  },
+  "MigrationSettings": {
+    "MigrationsDirectory": "./migrations",
+    "StopOnError": true
+  }
+}
 ```
 
 ## Возможности
@@ -159,13 +123,12 @@ export STOP_ON_ERROR=true
 - Запись статуса выполнения в БД
 
 ### ✓ Dry-run режим
-- Просмотр плана выполнения без реального применения
+- Просмотр плана выполнения без реального применения через кнопку "Preview"
 
-## Запуск тестов
-
-```bash
-pytest tests/ -v
-```
+### ✓ Веб-интерфейс
+- Удобный интерфейс для управления миграциями
+- Отображение истории миграций
+- Визуализация статуса каждой миграции
 
 ## Best Practices для команды разработки
 
@@ -178,25 +141,28 @@ pytest tests/ -v
 
 ### 2. Перед применением
 
-- Всегда запускайте `validate` для проверки скриптов
-- Проверяйте статус через `status`
-- Используйте `--dry-run` в боевой среде
+- Всегда выполняйте валидацию скриптов через интерфейс
+- Проверяйте статус миграций
+- Используйте режим Preview в боевой среде
 
 ### 3. В случае ошибки
 
-- Изучите логи
-- При необходимости используйте `rollback`
+- Изучите логи в интерфейсе
+- При необходимости используйте Rollback
 - Исправьте проблему и повторите миграцию
 
 ### 4. CI/CD интеграция
+
+Для автоматизации в CI/CD можно использовать прямое выполнение миграций через сервисы проекта:
 
 ```yaml
 # Пример для GitLab CI
 migrate:
   stage: deploy
   script:
-    - python cli.py validate
-    - python cli.py migrate --database $DB_NAME --user $DB_USER --password $DB_PASSWORD
+    - cd dotnet/SqlMigrationBlazor
+    - dotnet restore
+    - dotnet ef database update
 ```
 
 ## Лицензия
