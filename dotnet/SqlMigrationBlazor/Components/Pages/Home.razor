@@ -1,0 +1,398 @@
+@using SqlMigrationBlazor.Data
+@using SqlMigrationBlazor.Models
+@using SqlMigrationBlazor.Services
+
+<PageTitle>SQL Migration Manager</PageTitle>
+
+<div class="container-fluid mt-4">
+    <h1 class="mb-4">🗄️ SQL Migration Manager</h1>
+
+    @if (!isConnected)
+    {
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">📡 Database Connection</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Host</label>
+                        <input type="text" class="form-control" @bind="dbConfig.Host" placeholder="localhost" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Port</label>
+                        <input type="number" class="form-control" @bind="dbConfig.Port" placeholder="1433" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Database</label>
+                        <input type="text" class="form-control" @bind="dbConfig.Database" placeholder="MyDatabase" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" @bind="dbConfig.Username" placeholder="sa" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" @bind="dbConfig.Password" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Migrations Directory</label>
+                        <input type="text" class="form-control" @bind="migrationConfig.MigrationsDir" placeholder="./migrations" />
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <button class="btn btn-success me-2" @onclick="Connect" disabled="@string.IsNullOrEmpty(dbConfig.Database)">
+                            🔌 Connect
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-success d-flex justify-content-between align-items-center">
+            <span>✅ Connected to <strong>@dbConfig.Database</strong> on <strong>@dbConfig.Host</strong></span>
+            <button class="btn btn-outline-danger btn-sm" @onclick="Disconnect">Disconnect</button>
+        </div>
+
+        <!-- Status Cards -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h3>@status?.AppliedCount</h3>
+                        <p class="mb-0">Applied Migrations</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-warning text-dark">
+                    <div class="card-body text-center">
+                        <h3>@status?.PendingCount</h3>
+                        <p class="mb-0">Pending Migrations</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-info text-white">
+                    <div class="card-body text-center">
+                        <h5>Last Applied</h5>
+                        <p class="mb-0">@status?.LastApplied ?? "N/A"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="card mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">⚙️ Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="btn-group" role="group">
+                    <button class="btn btn-primary" @onclick="Validate" disabled="@isLoading">
+                        ✓ Validate
+                    </button>
+                    <button class="btn btn-success" @onclick="ApplyMigrations" disabled="@isLoading || status?.PendingCount == 0">
+                        ▶ Apply Pending
+                    </button>
+                    <button class="btn btn-warning" @onclick="RollbackLast" disabled="@isLoading || status?.AppliedCount == 0">
+                        ↩ Rollback Last
+                    </button>
+                    <button class="btn btn-info text-white" @onclick="RefreshStatus" disabled="@isLoading">
+                        🔄 Refresh
+                    </button>
+                </div>
+                <div class="form-check form-switch mt-3">
+                    <input class="form-check-input" type="checkbox" @bind="dryRun" id="dryRunSwitch" />
+                    <label class="form-check-label" for="dryRunSwitch">Dry Run (Preview only)</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages -->
+        @if (!string.IsNullOrEmpty(message))
+        {
+            <div class="alert @(messageType == MessageType.Error ? "alert-danger" : messageType == MessageType.Warning ? "alert-warning" : "alert-success")">
+                @message
+            </div>
+        }
+
+        <!-- Pending Migrations -->
+        @if (pendingScripts.Count > 0)
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">⏳ Pending Migrations (@pendingScripts.Count)</h5>
+                </div>
+                <div class="card-body">
+                    @foreach (var script in pendingScripts)
+                    {
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">@script.FullName</h6>
+                                <small class="text-muted">V@script.Version</small>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Migration History -->
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">📜 Migration History</h5>
+            </div>
+            <div class="card-body">
+                @if (status?.AllMigrations.Count > 0)
+                {
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Version</th>
+                                <th>Name</th>
+                                <th>Checksum</th>
+                                <th>Applied At</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var migration in status.AllMigrations.OrderByDescending(m => m.AppliedAt))
+                            {
+                                <tr>
+                                    <td><code>@migration.Version</code></td>
+                                    <td>@migration.Name</td>
+                                    <td><small class="text-muted">@migration.Checksum</small></td>
+                                    <td>@migration.AppliedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td>
+                                        @if (migration.Success)
+                                        {
+                                            <span class="badge bg-success status-badge">Success</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger status-badge">Failed</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p class="text-muted text-center">No migrations applied yet.</p>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool isConnected = false;
+    private bool isLoading = false;
+    private bool dryRun = false;
+    private string message = "";
+    private MessageType messageType = MessageType.Info;
+
+    private DatabaseConfig dbConfig = new();
+    private MigrationConfig migrationConfig = new();
+    private MigrationStatus? status;
+    private List<MigrationScript> pendingScripts = new();
+
+    private enum MessageType { Info, Success, Warning, Error }
+
+    private async Task Connect()
+    {
+        isLoading = true;
+        message = "";
+
+        try
+        {
+            var config = new Config
+            {
+                Database = dbConfig,
+                Migration = migrationConfig
+            };
+
+            using var controller = new SqlMigrationController(config);
+            controller.Connect();
+            
+            await LoadStatus(controller);
+            
+            isConnected = true;
+            messageType = MessageType.Success;
+            message = "Successfully connected to database!";
+        }
+        catch (Exception ex)
+        {
+            messageType = MessageType.Error;
+            message = $"Connection failed: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void Disconnect()
+    {
+        isConnected = false;
+        status = null;
+        pendingScripts.Clear();
+        message = "Disconnected from database.";
+        messageType = MessageType.Info;
+    }
+
+    private async Task LoadStatus(SqlMigrationController controller)
+    {
+        status = controller.Status();
+        pendingScripts = controller.GetPendingMigrations().Scripts;
+        await Task.CompletedTask;
+    }
+
+    private async Task RefreshStatus()
+    {
+        if (!isConnected) return;
+
+        isLoading = true;
+        message = "";
+
+        try
+        {
+            var config = new Config { Database = dbConfig, Migration = migrationConfig };
+            using var controller = new SqlMigrationController(config);
+            controller.Connect();
+            await LoadStatus(controller);
+            messageType = MessageType.Info;
+            message = "Status refreshed.";
+        }
+        catch (Exception ex)
+        {
+            messageType = MessageType.Error;
+            message = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task Validate()
+    {
+        isLoading = true;
+        message = "";
+
+        try
+        {
+            var config = new Config { Database = dbConfig, Migration = migrationConfig };
+            using var controller = new SqlMigrationController(config);
+            controller.Connect();
+
+            var errors = controller.Validate();
+            if (errors.Count > 0)
+            {
+                messageType = MessageType.Warning;
+                message = "Validation warnings:\n" + string.Join("\n", errors);
+            }
+            else
+            {
+                messageType = MessageType.Success;
+                message = "✓ All migration scripts are valid!";
+            }
+        }
+        catch (Exception ex)
+        {
+            messageType = MessageType.Error;
+            message = $"Validation error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ApplyMigrations()
+    {
+        isLoading = true;
+        message = "";
+
+        try
+        {
+            var config = new Config 
+            { 
+                Database = dbConfig, 
+                Migration = new MigrationConfig 
+                { 
+                    MigrationsDir = migrationConfig.MigrationsDir,
+                    DryRun = dryRun,
+                    StopOnError = true
+                }
+            };
+
+            using var controller = new SqlMigrationController(config);
+            controller.Connect();
+
+            var batch = controller.ApplyMigrations();
+
+            if (dryRun)
+            {
+                messageType = MessageType.Info;
+                message = $"[DRY RUN] Would apply {batch.Scripts.Count} migration(s).";
+            }
+            else
+            {
+                messageType = batch.Status == "completed" ? MessageType.Success : MessageType.Error;
+                message = $"Migration completed with status: {batch.Status}. Executed {batch.Scripts.Count} script(s).";
+            }
+
+            await LoadStatus(controller);
+        }
+        catch (Exception ex)
+        {
+            messageType = MessageType.Error;
+            message = $"Migration failed: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RollbackLast()
+    {
+        isLoading = true;
+        message = "";
+
+        try
+        {
+            var config = new Config { Database = dbConfig, Migration = migrationConfig };
+            using var controller = new SqlMigrationController(config);
+            controller.Connect();
+
+            var success = controller.RollbackLast();
+
+            if (success)
+            {
+                messageType = MessageType.Success;
+                message = "✓ Successfully rolled back last migration.";
+                await LoadStatus(controller);
+            }
+            else
+            {
+                messageType = MessageType.Warning;
+                message = "No migrations to rollback or rollback script not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            messageType = MessageType.Error;
+            message = $"Rollback failed: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
