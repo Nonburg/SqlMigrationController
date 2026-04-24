@@ -1,53 +1,24 @@
 ```
-# Build artifacts
-bin/
-obj/
-out/
-*.dll
-*.exe
-*.pdb
-*.so
-*.dylib
-*.jar
-*.war
-*.ear
+# Compiled and build artifacts
+*.pyc
+__pycache__/
 
 # Dependencies
+.venv/
+venv/
 node_modules/
-packages/
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
+*.swp
 
-# Environment specific
+# Environment
 .env
 .env.local
 *.env.*
 
-# OS generated
-.DS_Store
-Thumbs.db
-
-# IDE
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# Testing
-coverage/
-htmlcov/
-*.coverage
-
-# Distribution / packaging
-dist/
-build/
-*.msi
-*.deb
-*.rpm
-*.nupkg
-
-# Temporary files
-*.tmp
-*.temp
 ```
